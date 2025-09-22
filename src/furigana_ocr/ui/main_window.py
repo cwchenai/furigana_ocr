@@ -261,12 +261,10 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
-        if self._exiting:
-            super().closeEvent(event)
-            return
-        event.ignore()
-        self.hide()
-        self._tray.show_message("Furigana OCR", "程式已縮小到系統工具列。")
+        if not self._exiting:
+            self._exit_application()
+            event.accept()
+        super().closeEvent(event)
 
 
 __all__ = ["MainWindow"]
