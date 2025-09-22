@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import traceback
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QCloseEvent
@@ -97,6 +97,7 @@ class MainWindow(QMainWindow):
         self._running = False
         self._is_processing = False
         self._worker_threads: List[QThread] = []
+        self._worker_context: Dict[_PipelineWorker, Tuple[Optional[QThread], bool]] = {}
         self._exiting = False
 
         self.setWindowTitle("Furigana OCR Overlay")
@@ -185,19 +186,29 @@ class MainWindow(QMainWindow):
         worker = _PipelineWorker(self.pipeline, self.capture_region)
         thread = QThread(self)
         worker.moveToThread(thread)
-        worker.finished.connect(lambda annotations, t=thread, w=worker, reset=reset_timer: self._on_processing_finished(annotations, t, w, reset))
-        worker.failed.connect(lambda exc, t=thread, w=worker: self._on_processing_failed(exc, t, w))
+        worker.finished.connect(self._on_processing_finished)
+        worker.failed.connect(self._on_processing_failed)
         thread.started.connect(worker.run)
         thread.start()
         self._worker_threads.append(thread)
+        self._worker_context[worker] = (thread, reset_timer)
 
-    def _on_processing_finished(self, annotations: List[TokenAnnotation], thread: QThread, worker: _PipelineWorker, reset_timer: bool) -> None:
-        thread.quit()
-        thread.wait(100)
-        if thread in self._worker_threads:
-            self._worker_threads.remove(thread)
-        worker.deleteLater()
-        thread.deleteLater()
+    def _on_processing_finished(self, annotations: List[TokenAnnotation]) -> None:
+        sender = self.sender()
+        if not isinstance(sender, _PipelineWorker):
+            return
+
+        thread, reset_timer = self._worker_context.pop(sender, (sender.thread(), False))
+
+        if thread is not None:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(100)
+            if thread in self._worker_threads:
+                self._worker_threads.remove(thread)
+            thread.deleteLater()
+
+        sender.deleteLater()
 
         if self._running:
             self._overlay.update_state(OverlayState(region=self.capture_region or (0, 0, 0, 0), annotations=annotations))
@@ -208,17 +219,24 @@ class MainWindow(QMainWindow):
             self._overlay.clear()
         self._is_processing = False
 
-    def _on_processing_failed(self, exc: Exception, thread: QThread, worker: _PipelineWorker) -> None:
-        thread.quit()
-        thread.wait(100)
-        if thread in self._worker_threads:
-            self._worker_threads.remove(thread)
-        worker.deleteLater()
-        thread.deleteLater()
+    def _on_processing_failed(self, exc: Exception) -> None:
+        sender = self.sender()
+        if isinstance(sender, _PipelineWorker):
+            thread, _ = self._worker_context.pop(sender, (sender.thread(), False))
+
+            if thread is not None:
+                if thread.isRunning():
+                    thread.quit()
+                    thread.wait(100)
+                if thread in self._worker_threads:
+                    self._worker_threads.remove(thread)
+                thread.deleteLater()
+
+            sender.deleteLater()
         self._is_processing = False
         if self._running:
             self._timer.start(self.config.capture.frequency_ms)
-        self._status_bar.showMessage("處理失敗，請查看日誌。")
+        self._status_bar.showMessage("辨識失敗，將重試；詳情請查看日誌。")
         traceback.print_exception(type(exc), exc, exc.__traceback__)
         QMessageBox.critical(self, "處理失敗", str(exc))
 
