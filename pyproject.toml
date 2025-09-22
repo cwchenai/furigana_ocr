@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "furigana-ocr"
+version = "0.1.0"
+description = "Desktop overlay that captures Japanese text and displays furigana with dictionary lookups."
+readme = "README.md"
+authors = [{ name = "Furigana OCR Team" }]
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.5",
+    "fugashi>=1.2",
+    "jamdict>=0.1.20",
+    "jamdict-data>=1.5.3",
+    "mss>=9.0.1",
+    "pillow>=10.0.0",
+    "pykakasi>=2.2.1",
+    "pytesseract>=0.3.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.7",
+    "ruff>=0.1.6",
+]
+
+[project.scripts]
+furigana-ocr = "furigana_ocr.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+target-version = ["py310"]
+line-length = 100
+
+[tool.ruff]
+select = ["E", "F", "I"]
+line-length = 100
+src = ["src"]
