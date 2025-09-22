@@ -1,0 +1,8 @@
+PySide6>=6.5
+fugashi>=1.2
+jamdict>=0.1.20
+jamdict-data>=1.5.3
+mss>=9.0.1
+pillow>=10.0.0
+pykakasi>=2.2.1
+pytesseract>=0.3.10
