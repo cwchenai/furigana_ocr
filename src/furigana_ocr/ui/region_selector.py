@@ -25,6 +25,7 @@ class RegionSelector(QWidget):
         self._rubber_band = QRubberBand(QRubberBand.Rectangle, self)
         self._origin = QPoint()
         self._current_rect: Optional[QRect] = None
+        self._last_ratio: float = 1.0
 
     def start(self) -> None:
         self._current_rect = None
@@ -80,6 +81,7 @@ class RegionSelector(QWidget):
         if screen is None:
             screen = QApplication.primaryScreen()
         ratio = float(screen.devicePixelRatio()) if screen is not None else 1.0
+        self._last_ratio = ratio
 
         left = int(floor(top_left.x() * ratio))
         top = int(floor(top_left.y() * ratio))
@@ -87,6 +89,10 @@ class RegionSelector(QWidget):
         height = int(max(1, ceil(rect.height() * ratio)))
 
         return (left, top, width, height)
+
+    @property
+    def last_ratio(self) -> float:
+        return self._last_ratio
 
 
 __all__ = ["RegionSelector"]

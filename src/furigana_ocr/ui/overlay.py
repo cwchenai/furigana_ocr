@@ -17,6 +17,7 @@ from ..core.models import BoundingBox, TokenAnnotation
 class OverlayState:
     region: tuple[int, int, int, int]
     annotations: Sequence[TokenAnnotation]
+    device_pixel_ratio: float = 1.0
 
 
 class OverlayWindow(QWidget):
@@ -42,21 +43,39 @@ class OverlayWindow(QWidget):
         if state is None:
             self.clear()
             return
+        ratio = state.device_pixel_ratio if state.device_pixel_ratio > 0 else 1.0
+        scale = 1.0 / ratio
+
         region = state.region
-        self.setGeometry(region[0], region[1], region[2], region[3])
-        self._rebuild_labels(state.annotations)
+        logical_region = (
+            int(round(region[0] * scale)),
+            int(round(region[1] * scale)),
+            max(int(round(region[2] * scale)), 1),
+            max(int(round(region[3] * scale)), 1),
+        )
+        self.setGeometry(*logical_region)
+        self._rebuild_labels(state.annotations, scale)
         if state.annotations:
             self.show()
         else:
             self.hide()
 
-    def _rebuild_labels(self, annotations: Sequence[TokenAnnotation]) -> None:
+    def _rebuild_labels(
+        self, annotations: Sequence[TokenAnnotation], scale: float
+    ) -> None:
         self.clear()
         for annotation in annotations:
             if annotation.bbox is None:
                 continue
             label = TokenLabel(annotation, self._config, self)
-            label.apply_bbox(annotation.bbox)
+            bbox = annotation.bbox
+            scaled_bbox = BoundingBox(
+                left=int(round(bbox.left * scale)),
+                top=int(round(bbox.top * scale)),
+                width=max(int(round(bbox.width * scale)), 1),
+                height=max(int(round(bbox.height * scale)), 1),
+            )
+            label.apply_bbox(scaled_bbox)
             label.show()
             self._labels.append(label)
 
