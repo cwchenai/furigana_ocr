@@ -14,7 +14,7 @@ from ..core.models import OCRResult, OCRWord, Region, TokenAnnotation, TokenData
 from ..core.ocr import BaseOCRProcessor, OCRProcessor, PaddleOCRProcessor
 from ..core.tokenization import Tokenizer
 from ..core.transliteration import FuriganaGenerator
-from ..utils import combine_bounding_boxes
+from ..utils import combine_bounding_boxes, segment_ocr_word
 
 
 @dataclass
@@ -73,8 +73,11 @@ class ProcessingPipeline:
         annotations: List[TokenAnnotation] = []
         words = ocr_result.words
         word_index = 0
+        char_offset = 0
         for token in tokens:
-            matched_words, word_index = self._match_words(token.surface, words, word_index)
+            matched_words, word_index, char_offset = self._match_words(
+                token.surface, words, word_index, char_offset
+            )
             if matched_words:
                 bbox = combine_bounding_boxes(word.bbox for word in matched_words)
                 confidence = sum(word.confidence for word in matched_words) / len(matched_words)
@@ -95,32 +98,70 @@ class ProcessingPipeline:
         return annotations
 
     def _match_words(
-        self, surface: str, words: Sequence[OCRWord], start_index: int
-    ) -> tuple[List[OCRWord], int]:
+        self,
+        surface: str,
+        words: Sequence[OCRWord],
+        start_index: int,
+        start_offset: int,
+    ) -> tuple[List[OCRWord], int, int]:
         if start_index >= len(words):
-            return [], start_index
+            return [], start_index, start_offset
+
         cleaned = surface.strip()
         if not cleaned:
-            word = words[start_index]
-            return [word], start_index + 1
+            return [], start_index, start_offset
+
         collected: List[OCRWord] = []
-        combined = ""
         index = start_index
-        while index < len(words):
+        offset = start_offset
+        remaining = cleaned
+
+        while index < len(words) and remaining:
             word = words[index]
-            index += 1
-            if not word.text.strip():
+            compact = "".join(ch for ch in word.text if not ch.isspace())
+            if not compact:
+                index += 1
+                offset = 0
                 continue
-            collected.append(word)
-            combined += word.text
-            combined_clean = combined.strip()
-            if cleaned in combined_clean or combined_clean.endswith(cleaned):
+            if offset >= len(compact):
+                index += 1
+                offset = 0
+                continue
+
+            available = compact[offset:]
+            if not available:
+                index += 1
+                offset = 0
+                continue
+
+            if remaining.startswith(available):
+                length = len(available)
+            elif available.startswith(remaining):
+                length = len(remaining)
+            else:
+                length = 0
+                for a, b in zip(remaining, available):
+                    if a != b:
+                        break
+                    length += 1
+            if length <= 0:
                 break
-            if len(combined_clean) >= len(cleaned):
-                break
+
+            text, bbox = segment_ocr_word(word, offset, length)
+            if text:
+                collected.append(
+                    OCRWord(text=text, confidence=word.confidence, bbox=bbox, order=word.order)
+                )
+
+            remaining = remaining[length:]
+            offset += length
+            if offset >= len(compact):
+                index += 1
+                offset = 0
+
         if not collected:
-            return [], index
-        return collected, index
+            return [], index, offset
+        return collected, index, offset
 
 
 __all__ = ["PipelineDependencies", "ProcessingPipeline"]
