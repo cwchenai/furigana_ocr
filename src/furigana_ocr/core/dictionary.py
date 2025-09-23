@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence
+import threading
+from typing import Any, List, Sequence
 
 try:  # pragma: no cover - optional dependency in tests
     from jamdict import Jamdict
@@ -18,18 +19,32 @@ class DictionaryLookup:
     def __init__(self, search_limit: int = 3, enable_fuzzy_lookup: bool = True) -> None:
         self.search_limit = search_limit
         self.enable_fuzzy_lookup = enable_fuzzy_lookup
-        try:
-            self._jamdict = Jamdict() if Jamdict else None
-        except Exception:
-            self._jamdict = None
+        self._thread_local = threading.local()
+        self._initialisation_failed = False
 
     def lookup(self, surface: str) -> List[DictionaryEntry]:
         if not surface:
             return []
-        if self._jamdict is None:
+        client = self._get_client()
+        if client is None:
             return []
         try:
-            result = self._jamdict.lookup(surface, strict=not self.enable_fuzzy_lookup)
+            result = client.lookup(surface, strict=not self.enable_fuzzy_lookup)
+        except AttributeError as exc:  # pragma: no cover - defensive fallback
+            # ``Jamdict`` stores DB handles on a thread local object.  When the
+            # instance created in one thread is re-used from another thread the
+            # attribute access can fail with ``_thread._local`` errors.  Reset the
+            # client for the current thread and retry once.
+            if "_thread._local" not in str(exc):
+                return []
+            self._reset_client()
+            client = self._get_client()
+            if client is None:
+                return []
+            try:
+                result = client.lookup(surface, strict=not self.enable_fuzzy_lookup)
+            except Exception:
+                return []
         except Exception:  # pragma: no cover - defensive fallback
             return []
         entries: List[DictionaryEntry] = []
@@ -42,6 +57,24 @@ class DictionaryLookup:
                 )
             )
         return entries
+
+    def _get_client(self) -> Any | None:
+        if self._initialisation_failed or Jamdict is None:
+            return None
+        client = getattr(self._thread_local, "jamdict", None)
+        if client is not None:
+            return client
+        try:
+            client = Jamdict()
+        except Exception:
+            self._initialisation_failed = True
+            return None
+        self._thread_local.jamdict = client
+        return client
+
+    def _reset_client(self) -> None:
+        if hasattr(self._thread_local, "jamdict"):
+            delattr(self._thread_local, "jamdict")
 
     @staticmethod
     def _extract_expression(entry) -> str:
