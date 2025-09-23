@@ -27,13 +27,15 @@ class ScreenCapture:
 
     def capture(self, region: Region) -> Image.Image:
         """Capture the supplied region and return a PIL image."""
-
+        import mss
         if region is None:
             raise ValueError("A capture region must be selected before starting the pipeline.")
 
         left, top, width, height = region
         monitor = {"left": left, "top": top, "width": width, "height": height}
-        raw = self._ensure_session().grab(monitor)
+        with mss.mss() as mss:
+            raw = mss.grab(monitor)
+            
         return Image.frombytes("RGB", raw.size, raw.rgb)
 
     def close(self) -> None:
