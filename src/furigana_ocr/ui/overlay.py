@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence
+from html import escape
+from typing import List, Sequence, cast
 
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtCore import QPoint, Qt, QRect
 from PySide6.QtGui import (
     QColor,
-    QCursor,
     QFont,
     QFontMetrics,
     QPainter,
     QPainterPath,
     QPen,
+    QScreen,
 )
-from PySide6.QtWidgets import QToolTip, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from ..config import OverlayConfig
 from ..core.models import BoundingBox, TokenAnnotation
@@ -38,6 +39,7 @@ class OverlayWindow(QWidget):
         self.setMouseTracking(True)
         self._config = config
         self._labels: List[TokenLabel] = []
+        self._dictionary_popup = DictionaryPopup(self)
         self.hide()
 
     def notify_config_changed(self) -> None:
@@ -47,6 +49,7 @@ class OverlayWindow(QWidget):
             label.update_config(self._config)
 
     def clear(self) -> None:
+        self._dictionary_popup.hide_popup()
         for label in self._labels:
             label.setParent(None)
             label.deleteLater()
@@ -93,6 +96,14 @@ class OverlayWindow(QWidget):
             label.show()
             self._labels.append(label)
 
+    def show_dictionary(self, label: "TokenLabel") -> None:
+        anchor = QRect(label.mapToGlobal(QPoint(0, 0)), label.rect().size())
+        if not self._dictionary_popup.show_for(label.annotation, anchor, self.screen()):
+            self._dictionary_popup.hide_popup()
+
+    def hide_dictionary(self, label: "TokenLabel") -> None:
+        self._dictionary_popup.hide_popup()
+
 
 class TokenLabel(QWidget):
     """Interactive widget responsible for rendering a single token."""
@@ -109,17 +120,9 @@ class TokenLabel(QWidget):
         self._surface_offset = 0
         self._bbox: BoundingBox | None = None
         self._is_hovered = False
+        self._overlay = cast(OverlayWindow, parent)
         self._update_fonts()
-        if annotation.dictionary_entries:
-            tooltip_lines = [
-                f"<b>{entry.expression}</b> ({entry.reading}) - {entry.format_gloss()}"
-                if entry.reading
-                else f"<b>{entry.expression}</b> - {entry.format_gloss()}"
-                for entry in annotation.dictionary_entries
-            ]
-            self.setToolTip("<br/>".join(tooltip_lines))
-        else:
-            self.setToolTip("")
+        self.setToolTip("")
 
     def apply_bbox(self, bbox: BoundingBox) -> None:
         """Resize and position the widget to accommodate furigana above the text."""
@@ -171,22 +174,22 @@ class TokenLabel(QWidget):
             path.addText(x, float(baseline), self._furigana_font, furigana_text)
             fill_color = QColor(*self.config.furigana_color)
             outline = QColor(0, 0, 0)
-            outline.setAlpha(230)
-            painter.setPen(QPen(outline, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            outline.setAlpha(170)
+            outline_pen = QPen(outline, 1, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            outline_pen.setWidthF(1.0)
+            painter.setPen(outline_pen)
             painter.setBrush(fill_color)
             painter.drawPath(path)
 
     def enterEvent(self, event) -> None:  # type: ignore[override]
         self._is_hovered = True
-        tooltip = self.toolTip()
-        if tooltip:
-            QToolTip.showText(QCursor.pos(), tooltip, self)
+        self._overlay.show_dictionary(self)
         self.update()
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:  # type: ignore[override]
         self._is_hovered = False
-        QToolTip.hideText()
+        self._overlay.hide_dictionary(self)
         self.update()
         super().leaveEvent(event)
 
@@ -213,3 +216,121 @@ class TokenLabel(QWidget):
 
 
 __all__ = ["OverlayState", "OverlayWindow"]
+
+
+class DictionaryPopup(QWidget):
+    """Rich tooltip widget that displays dictionary information."""
+
+    _MAX_WIDTH = 360
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.ToolTip | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setObjectName("dictionaryPopup")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+        self._content = QLabel(self)
+        self._content.setObjectName("dictionaryPopupContent")
+        self._content.setWordWrap(True)
+        self._content.setTextFormat(Qt.RichText)
+        self._content.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._content.setMaximumWidth(self._MAX_WIDTH)
+        layout.addWidget(self._content)
+        self.setStyleSheet(
+            "#dictionaryPopup {"
+            "background-color: rgba(255, 255, 255, 245);"
+            "border: 1px solid rgba(0, 0, 0, 80);"
+            "border-radius: 8px;"
+            "color: #222;"
+            "font-size: 13px;"
+            "}"
+            "#dictionaryPopupContent {"
+            "color: #222;"
+            "}""
+        )
+
+    def show_for(
+        self,
+        annotation: TokenAnnotation,
+        anchor: QRect,
+        screen: QScreen | None,
+    ) -> bool:
+        html = self._build_html(annotation)
+        if html is None:
+            return False
+        self._content.setText(html)
+        self._content.adjustSize()
+        self.adjustSize()
+        offset = 12
+        x = anchor.right() + offset
+        y = anchor.top()
+        if screen is not None:
+            available = screen.availableGeometry()
+            if x + self.width() > available.right() - offset:
+                x = anchor.left() - self.width() - offset
+            if x < available.left() + offset:
+                x = available.left() + offset
+            if y + self.height() > available.bottom() - offset:
+                y = anchor.bottom() - self.height()
+            if y < available.top() + offset:
+                y = available.top() + offset
+        self.move(int(x), int(y))
+        self.show()
+        self.raise_()
+        return True
+
+    def hide_popup(self) -> None:
+        self.hide()
+
+    def _build_html(self, annotation: TokenAnnotation) -> str | None:
+        token = annotation.token
+        header_parts: List[str] = []
+        surface = token.surface.strip()
+        if surface:
+            header = f"<span style='font-weight:bold; font-size:14px;'>{escape(surface)}</span>"
+            header_parts.append(header)
+        if token.reading and token.reading.strip() and token.reading.strip() != surface:
+            header_parts.append(
+                f"<span style='color:#666;'>[{escape(token.reading.strip())}]</span>"
+            )
+        details: List[str] = []
+        if token.part_of_speech:
+            details.append(escape(token.part_of_speech))
+        if token.lemma and token.lemma.strip() and token.lemma.strip() != surface:
+            details.append(f"原形: {escape(token.lemma.strip())}")
+
+        body_sections: List[str] = []
+        if header_parts:
+            header_html = "&nbsp;".join(header_parts)
+            if details:
+                header_html += "<div style='color:#777; margin-top:2px;'>" + " / ".join(details) + "</div>"
+            body_sections.append(header_html)
+        elif details:
+            body_sections.append("<div style='color:#777;'>" + " / ".join(details) + "</div>")
+
+        for entry in annotation.dictionary_entries:
+            expression = escape(entry.expression)
+            reading_html = (
+                f"<span style='color:#555;'>[{escape(entry.reading)}]</span>"
+                if entry.reading and entry.reading != entry.expression
+                else ""
+            )
+            gloss_items = "".join(
+                f"<li>{escape(sense)}</li>" for sense in entry.senses if sense.strip()
+            )
+            gloss_html = (
+                f"<ul style='margin:4px 0 0 18px; padding:0;'>" + gloss_items + "</ul>"
+                if gloss_items
+                else ""
+            )
+            entry_html = (
+                f"<div style='margin-top:6px;'><span style='font-weight:bold;'>{expression}</span>"
+                f" {reading_html}{gloss_html}</div>"
+            )
+            body_sections.append(entry_html)
+
+        if not body_sections:
+            return None
+        return "".join(body_sections)
