@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import ceil, floor
 from typing import Optional
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
@@ -60,7 +61,7 @@ class RegionSelector(QWidget):
             self._rubber_band.hide()
             rect = self._current_rect or QRect(self._origin, event.pos()).normalized()
             if rect.width() > 10 and rect.height() > 10:
-                region: Region = (rect.left(), rect.top(), rect.width(), rect.height())
+                region = self._rect_to_region(rect)
                 self.region_selected.emit(region)
             else:
                 self.selection_cancelled.emit()
@@ -72,6 +73,20 @@ class RegionSelector(QWidget):
         painter.setOpacity(0.3)
         painter.fillRect(self.rect(), Qt.black)
         painter.setOpacity(1.0)
+
+    def _rect_to_region(self, rect: QRect) -> Region:
+        top_left = self.mapToGlobal(rect.topLeft())
+        screen = QApplication.screenAt(top_left)
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        ratio = float(screen.devicePixelRatio()) if screen is not None else 1.0
+
+        left = int(floor(top_left.x() * ratio))
+        top = int(floor(top_left.y() * ratio))
+        width = int(max(1, ceil(rect.width() * ratio)))
+        height = int(max(1, ceil(rect.height() * ratio)))
+
+        return (left, top, width, height)
 
 
 __all__ = ["RegionSelector"]
