@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Sequence
 
 try:  # pragma: no cover - the dependency may be missing in CI
     from fugashi import Tagger
@@ -36,11 +36,7 @@ class Tokenizer:
             if lemma:
                 lemma = str(lemma)
             pos = self._extract_pos(word)
-            reading = getattr(word, "feature", None)
-            if isinstance(reading, (list, tuple)) and reading:
-                reading_text = reading[0]
-            else:
-                reading_text = getattr(word, "reading", None)
+            reading_text = self._extract_reading(word)
             tokens.append(
                 TokenData(
                     surface=str(getattr(word, "surface", "")),
@@ -59,6 +55,57 @@ class Tokenizer:
         pos = getattr(word, "pos", None)
         if isinstance(pos, str):
             return pos
+        return None
+
+    @staticmethod
+    def _extract_reading(word) -> str | None:
+        reading = getattr(word, "reading", None)
+        if isinstance(reading, str) and reading:
+            return reading
+        for attr in ("pron", "pronunciation", "kana"):
+            value = getattr(word, attr, None)
+            if isinstance(value, str) and value:
+                return value
+        features = getattr(word, "feature", None)
+        if features is None:
+            return None
+        for attr in ("reading", "kana", "pron", "pronunciation"):
+            value = getattr(features, attr, None)
+            if isinstance(value, str) and value:
+                return value
+        if isinstance(features, str):
+            parts = [part.strip() for part in features.split(",")]
+            candidate = Tokenizer._pick_reading_candidate(parts)
+            if candidate:
+                return candidate
+        if isinstance(features, Sequence):
+            candidate = Tokenizer._pick_reading_candidate(features)
+            if candidate:
+                return candidate
+            for value in features:
+                if not value:
+                    continue
+                text = str(value).strip()
+                if not text or text == "*":
+                    continue
+                if any("ぁ" <= ch <= "ゖ" or "ァ" <= ch <= "ヺ" for ch in text):
+                    return text
+        return None
+
+    @staticmethod
+    def _pick_reading_candidate(features: Sequence) -> str | None:
+        reading_indexes = (7, 8, 9, 10, 11)
+        for index in reading_indexes:
+            if index >= len(features):
+                break
+            value = features[index]
+            if not value:
+                continue
+            text = str(value).strip()
+            if not text or text == "*":
+                continue
+            if any("ぁ" <= ch <= "ゖ" or "ァ" <= ch <= "ヺ" for ch in text):
+                return text
         return None
 
 
