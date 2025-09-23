@@ -248,7 +248,7 @@ class DictionaryPopup(QWidget):
             "}"
             "#dictionaryPopupContent {"
             "color: #222;"
-            "}""
+            "}"
         )
 
     def show_for(
