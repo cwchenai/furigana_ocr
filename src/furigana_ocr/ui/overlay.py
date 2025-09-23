@@ -123,6 +123,9 @@ class TokenLabel(QWidget):
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
+        painter.setCompositionMode(QPainter.CompositionMode_Source)
+        painter.fillRect(self.rect(), Qt.transparent)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
         background = QColor(0, 0, 0)
         background.setAlphaF(min(max(self.config.background_opacity, 0.0), 0.8))
         if background.alpha() > 0:
@@ -140,11 +143,6 @@ class TokenLabel(QWidget):
                 rect_height = max(furigana_bottom - furigana_top, 1)
                 furigana_rect = QRect(0, furigana_top, self.width(), rect_height)
             painter.drawText(furigana_rect, Qt.AlignHCenter | Qt.AlignBottom, furigana_text)
-
-        painter.setFont(self._surface_font)
-        painter.setPen(QColor(255, 255, 255))
-        surface_rect = QRect(0, self._surface_offset, self.width(), max(self.height() - self._surface_offset, 1))
-        painter.drawText(surface_rect, Qt.AlignHCenter | Qt.AlignTop, self.annotation.token.surface)
 
     def enterEvent(self, event) -> None:  # type: ignore[override]
         tooltip = self.toolTip()

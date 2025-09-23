@@ -140,3 +140,43 @@ def test_match_words_returns_bounding_boxes_for_substrings() -> None:
         assert annotation.bbox is not None
         assert annotation.bbox.width > 0
         assert annotation.bbox.height > 0
+
+
+class _MappingFurigana:
+    def __init__(self, mapping):
+        self._mapping = mapping
+
+    def reading_for(self, surface: str):
+        return self._mapping.get(surface)
+
+
+def test_furigana_normalises_katakana_reading_to_hiragana() -> None:
+    pipeline = _build_pipeline()
+    pipeline.furigana = _MappingFurigana({"サンプル": "さんぷる"})
+    word = OCRWord(
+        text="漢字",
+        confidence=90.0,
+        bbox=BoundingBox(left=0, top=0, width=10, height=10),
+        order=0,
+    )
+    token = TokenData(surface="漢字", reading="サンプル")
+
+    annotations = pipeline._enrich([token], OCRResult(text="漢字", words=[word]))
+
+    assert annotations[0].furigana == "さんぷる"
+
+
+def test_furigana_skips_annotation_for_existing_kana_surface() -> None:
+    pipeline = _build_pipeline()
+    pipeline.furigana = _MappingFurigana({"テスト": "てすと"})
+    word = OCRWord(
+        text="テスト",
+        confidence=88.0,
+        bbox=BoundingBox(left=0, top=0, width=12, height=12),
+        order=0,
+    )
+    token = TokenData(surface="テスト", reading="テスト")
+
+    annotations = pipeline._enrich([token], OCRResult(text="テスト", words=[word]))
+
+    assert annotations[0].furigana is None
