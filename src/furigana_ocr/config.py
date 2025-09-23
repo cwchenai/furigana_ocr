@@ -17,6 +17,9 @@ class CaptureConfig:
     language: str = "jpn"
     """Tesseract language pack to use for OCR."""
 
+    engine: str = "tesseract"
+    """OCR engine identifier (``"tesseract"`` or ``"paddle"``)."""
+
     psm: int = 6
     """Page segmentation mode for Tesseract."""
 
