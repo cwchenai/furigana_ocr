@@ -84,7 +84,11 @@ class ProcessingPipeline:
             else:
                 bbox = None
                 confidence = 0.0
-            furigana = token.reading or self.furigana.reading_for(token.surface)
+            furigana = self._normalize_furigana(token.reading)
+            if furigana is None:
+                furigana = self._normalize_furigana(self.furigana.reading_for(token.surface))
+            if furigana and self._is_kana_text(token.surface):
+                furigana = None
             dictionary_entries = self.dictionary.lookup(token.surface)
             annotations.append(
                 TokenAnnotation(
@@ -162,6 +166,45 @@ class ProcessingPipeline:
         if not collected:
             return [], index, offset
         return collected, index, offset
+
+    def _normalize_furigana(self, text: str | None) -> str | None:
+        if not text:
+            return None
+        candidate = text.strip()
+        if not candidate:
+            return None
+        converted = self.furigana.reading_for(candidate)
+        if converted:
+            normalized = converted.strip()
+            if normalized:
+                return normalized
+        return candidate
+
+    @staticmethod
+    def _is_kana_text(text: str) -> bool:
+        if not text:
+            return False
+        has_kana = False
+        for char in text:
+            if char.isspace():
+                continue
+            if ProcessingPipeline._is_kana_char(char):
+                has_kana = True
+                continue
+            return False
+        return has_kana
+
+    @staticmethod
+    def _is_kana_char(char: str) -> bool:
+        if not char:
+            return False
+        if "ぁ" <= char <= "ゖ":
+            return True
+        if "ァ" <= char <= "ヺ":
+            return True
+        if char in {"ゝ", "ゞ", "ヽ", "ヾ", "ー", "・"}:
+            return True
+        return False
 
 
 __all__ = ["PipelineDependencies", "ProcessingPipeline"]
