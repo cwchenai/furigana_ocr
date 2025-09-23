@@ -8,7 +8,7 @@ Furigana OCR Overlay 是一個桌面小工具，會定期擷取螢幕上指定�
 
 - 桌面工具列常駐的主視窗，可開始/停止 OCR 任務、調整頻率、強制觸發與結束程式。
 - 全螢幕框選工具，選擇欲解析的畫面區域。
-- 以 pytesseract 進行日文 OCR，搭配 fugashi 斷詞、pykakasi 產生振假名、jamdict 查詢字典。
+- 以 pytesseract 或 PaddleOCR 進行日文 OCR，搭配 fugashi 斷詞、pykakasi 產生振假名、jamdict 查詢字典。
 - 透明 overlay 顯示假名與字詞，滑鼠移到單字時即彈出字典解釋。
 - overlay 僅在單字上接收滑鼠事件，不會阻擋背景程式操作。
 - 系統工具列整合，支援右鍵選單的開始/停止與結束指令。
@@ -29,14 +29,14 @@ src/
 工作流程如下：
 
 1. 主視窗觸發 `RegionSelector` 讓使用者框選範圍。
-2. `ProcessingPipeline` 依頻率由 `ScreenCapture` 擷取影像，交給 `OCRProcessor`。
+2. `ProcessingPipeline` 依頻率由 `ScreenCapture` 擷取影像，交給設定中的 OCR 引擎。
 3. OCR 結果經 `Tokenizer` 斷詞、`FuriganaGenerator` 產生假名、`DictionaryLookup` 查詢字典。
 4. 產生的 `TokenAnnotation` 透過 `OverlayWindow` 在原畫面上方標註，滑鼠 hover 顯示字典內容。
 
 ## 安裝與執行
 
 1. 安裝系統相依項目：
-   - [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) 與日文語言包。
+   - [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) 與日文語言包（使用 Tesseract 引擎時需要）。
    - 建議安裝 `unidic-lite` 以供 fugashi 使用。
 2. 安裝 Python 相依套件：
 

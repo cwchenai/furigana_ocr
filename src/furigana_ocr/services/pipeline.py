@@ -11,7 +11,7 @@ from ..config import AppConfig
 from ..core.capture import ScreenCapture
 from ..core.dictionary import DictionaryLookup
 from ..core.models import OCRResult, OCRWord, Region, TokenAnnotation, TokenData
-from ..core.ocr import OCRProcessor
+from ..core.ocr import BaseOCRProcessor, OCRProcessor, PaddleOCRProcessor
 from ..core.tokenization import Tokenizer
 from ..core.transliteration import FuriganaGenerator
 from ..utils import combine_bounding_boxes
@@ -22,7 +22,7 @@ class PipelineDependencies:
     """Convenience container for the collaborating services."""
 
     capture: ScreenCapture
-    ocr: OCRProcessor
+    ocr: BaseOCRProcessor
     tokenizer: Tokenizer
     furigana: FuriganaGenerator
     dictionary: DictionaryLookup
@@ -34,18 +34,31 @@ class ProcessingPipeline:
     def __init__(self, config: AppConfig, deps: PipelineDependencies | None = None) -> None:
         self.config = config
         self.capture = deps.capture if deps else ScreenCapture()
-        self.ocr = deps.ocr if deps else OCRProcessor(
-            language=config.capture.language,
-            psm=config.capture.psm,
-            oem=config.capture.oem,
-            tesseract_cmd=str(config.capture.tesseract_cmd) if config.capture.tesseract_cmd else None,
-        )
+        self.ocr = deps.ocr if deps else self._build_ocr_processor(config.capture.engine)
         self.tokenizer = deps.tokenizer if deps else Tokenizer()
         self.furigana = deps.furigana if deps else FuriganaGenerator()
         self.dictionary = deps.dictionary if deps else DictionaryLookup(
             search_limit=config.dictionary.search_limit,
             enable_fuzzy_lookup=config.dictionary.enable_fuzzy_lookup,
         )
+
+    def _build_ocr_processor(self, engine: str) -> BaseOCRProcessor:
+        engine = engine.lower()
+        capture_cfg = self.config.capture
+        if engine == "paddle":
+            return PaddleOCRProcessor(language=capture_cfg.language)
+        return OCRProcessor(
+            language=capture_cfg.language,
+            psm=capture_cfg.psm,
+            oem=capture_cfg.oem,
+            tesseract_cmd=str(capture_cfg.tesseract_cmd) if capture_cfg.tesseract_cmd else None,
+        )
+
+    def set_ocr_engine(self, engine: str) -> None:
+        """Switch the underlying OCR implementation at runtime."""
+
+        self.config.capture.engine = engine
+        self.ocr = self._build_ocr_processor(engine)
 
     def process_region(self, region: Region) -> List[TokenAnnotation]:
         image = self.capture.capture(region)

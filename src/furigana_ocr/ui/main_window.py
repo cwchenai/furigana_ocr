@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
@@ -63,6 +64,17 @@ class MainWindow(QMainWindow):
         self._trigger_button.setEnabled(False)
         self._end_button = QPushButton("結束")
 
+        self._engine_selector = QComboBox()
+        self._engine_selector.addItem("Tesseract", "tesseract")
+        self._engine_selector.addItem("PaddleOCR", "paddle")
+        current_engine = self.config.capture.engine.lower()
+        index = self._engine_selector.findData(current_engine)
+        if index >= 0:
+            self._engine_selector.setCurrentIndex(index)
+        else:
+            self._engine_selector.setCurrentIndex(0)
+            self.config.capture.engine = str(self._engine_selector.currentData())
+
         self._frequency_input = QDoubleSpinBox()
         self._frequency_input.setRange(0.5, 60.0)
         self._frequency_input.setSingleStep(0.5)
@@ -92,6 +104,7 @@ class MainWindow(QMainWindow):
         self._trigger_button.clicked.connect(self._on_force_trigger)
         self._end_button.clicked.connect(self._exit_application)
         self._frequency_input.valueChanged.connect(self._on_frequency_changed)
+        self._engine_selector.currentIndexChanged.connect(self._on_engine_changed)
 
         self.capture_region: Optional[Region] = None
         self._running = False
@@ -108,6 +121,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
+
+        engine_layout = QHBoxLayout()
+        engine_layout.addWidget(QLabel("OCR 引擎:"))
+        engine_layout.addWidget(self._engine_selector)
+        layout.addLayout(engine_layout)
 
         frequency_layout = QHBoxLayout()
         frequency_layout.addWidget(QLabel("更新頻率:"))
@@ -130,6 +148,17 @@ class MainWindow(QMainWindow):
         self.config.capture.frequency_ms = interval
         if self._timer.isActive():
             self._timer.start(interval)
+
+    def _on_engine_changed(self, index: int) -> None:
+        engine = self._engine_selector.itemData(index)
+        if not engine:
+            return
+        engine_name = str(engine)
+        self.config.capture.engine = engine_name
+        self.pipeline.set_ocr_engine(engine_name)
+        if self._running and not self._is_processing:
+            self._trigger_processing(True)
+        self._status_bar.showMessage(f"已切換至 {self._engine_selector.currentText()} 引擎")
 
     def _on_start_clicked(self) -> None:
         if self._running:
