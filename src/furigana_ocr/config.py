@@ -38,6 +38,7 @@ class OverlayConfig:
     font_size: int = 18
     furigana_font_size: int = 11
     background_opacity: float = 0.0
+    furigana_color: tuple[int, int, int] = (255, 200, 150)
 
 
 @dataclass(slots=True)
