@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import traceback
+from functools import partial
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, Signal
@@ -11,11 +12,13 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDoubleSpinBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSlider,
     QStatusBar,
     QVBoxLayout,
     QWidget,
@@ -81,6 +84,10 @@ class MainWindow(QMainWindow):
         self._frequency_input.setSuffix(" 秒")
         self._frequency_input.setValue(self.config.capture.frequency_ms / 1000.0)
 
+        self._furigana_color_sliders: List[QSlider] = []
+        self._furigana_color_value_labels: List[QLabel] = []
+        self._furigana_color_preview: QFrame | None = None
+
         self._build_layout()
 
         self._timer = QTimer(self)
@@ -133,6 +140,41 @@ class MainWindow(QMainWindow):
         frequency_layout.addWidget(self._frequency_input)
         layout.addLayout(frequency_layout)
 
+        color_layout = QVBoxLayout()
+        color_layout.addWidget(QLabel("Furigana 顏色調整:"))
+
+        preview_layout = QHBoxLayout()
+        preview_layout.addWidget(QLabel("預覽:"))
+        preview = QFrame()
+        preview.setFrameShape(QFrame.Box)
+        preview.setFixedSize(48, 18)
+        self._furigana_color_preview = preview
+        preview_layout.addWidget(preview)
+        preview_layout.addStretch()
+        color_layout.addLayout(preview_layout)
+
+        initial_color = self.config.overlay.furigana_color
+        channel_names = ("R", "G", "B")
+        for index, channel_name in enumerate(channel_names):
+            channel_layout = QHBoxLayout()
+            channel_layout.addWidget(QLabel(f"{channel_name}:"))
+            slider = QSlider(Qt.Horizontal)
+            slider.setRange(0, 255)
+            slider.setValue(initial_color[index])
+            channel_layout.addWidget(slider)
+            value_label = QLabel(str(initial_color[index]))
+            value_label.setFixedWidth(32)
+            value_label.setAlignment(Qt.AlignRight)
+            channel_layout.addWidget(value_label)
+            slider.valueChanged.connect(
+                partial(self._on_furigana_color_slider_changed, index, value_label)
+            )
+            self._furigana_color_sliders.append(slider)
+            self._furigana_color_value_labels.append(value_label)
+            color_layout.addLayout(channel_layout)
+
+        layout.addLayout(color_layout)
+
         button_layout = QHBoxLayout()
         button_layout.addWidget(self._start_button)
         button_layout.addWidget(self._trigger_button)
@@ -143,12 +185,45 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("狀態: 如需開始請先選擇範圍"))
 
         self.setCentralWidget(central)
+        self._update_furigana_color_preview()
 
     def _on_frequency_changed(self, value: float) -> None:
         interval = int(value * 1000)
         self.config.capture.frequency_ms = interval
         if self._timer.isActive():
             self._timer.start(interval)
+
+    def _on_furigana_color_slider_changed(
+        self, channel: int, label: QLabel, value: int
+    ) -> None:
+        label.setText(str(value))
+        current_color = list(self.config.overlay.furigana_color)
+        if channel < 0 or channel >= len(current_color):
+            return
+        current_color[channel] = value
+        self.config.overlay.furigana_color = tuple(current_color)
+        self._update_furigana_color_preview()
+        self._overlay.notify_config_changed()
+
+    def _update_furigana_color_preview(self) -> None:
+        if self._furigana_color_preview is None:
+            return
+        r, g, b = self.config.overlay.furigana_color
+        self._furigana_color_preview.setStyleSheet(
+            f"background-color: rgb({r}, {g}, {b}); border: 1px solid #555;"
+        )
+        channels = self.config.overlay.furigana_color
+        for index, slider in enumerate(self._furigana_color_sliders):
+            if index >= len(channels):
+                break
+            if slider.value() != channels[index]:
+                slider.blockSignals(True)
+                slider.setValue(channels[index])
+                slider.blockSignals(False)
+        for index, label in enumerate(self._furigana_color_value_labels):
+            if index >= len(channels):
+                break
+            label.setText(str(channels[index]))
 
     def _on_engine_changed(self, index: int) -> None:
         engine = self._engine_selector.itemData(index)
