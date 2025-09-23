@@ -107,6 +107,7 @@ class MainWindow(QMainWindow):
         self._engine_selector.currentIndexChanged.connect(self._on_engine_changed)
 
         self.capture_region: Optional[Region] = None
+        self._capture_ratio: float = 1.0
         self._running = False
         self._is_processing = False
         self._worker_threads: List[QThread] = []
@@ -179,6 +180,7 @@ class MainWindow(QMainWindow):
 
     def _on_region_selected(self, region: Region) -> None:
         self.capture_region = region
+        self._capture_ratio = self._region_selector.last_ratio
         self._status_bar.showMessage("已選擇範圍，準備開始")
         self._start_pipeline()
 
@@ -240,7 +242,13 @@ class MainWindow(QMainWindow):
         sender.deleteLater()
 
         if self._running:
-            self._overlay.update_state(OverlayState(region=self.capture_region or (0, 0, 0, 0), annotations=annotations))
+            self._overlay.update_state(
+                OverlayState(
+                    region=self.capture_region or (0, 0, 0, 0),
+                    annotations=annotations,
+                    device_pixel_ratio=self._capture_ratio,
+                )
+            )
             if reset_timer:
                 self._timer.start(self.config.capture.frequency_ms)
             self._status_bar.showMessage("已更新詞彙資訊")
