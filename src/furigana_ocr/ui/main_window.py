@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import AppConfig
+from ..core.capture import ScreenCapture
 from ..core.models import Region, TokenAnnotation
 from ..services.pipeline import ProcessingPipeline
 from .overlay import OverlayState, OverlayWindow
@@ -285,6 +286,7 @@ class MainWindow(QMainWindow):
             return
         if self._is_processing:
             return
+        self._update_capture_mask()
         self._is_processing = True
         self._status_bar.showMessage("辨識中…")
         if reset_timer:
@@ -355,6 +357,27 @@ class MainWindow(QMainWindow):
     def _on_force_trigger(self) -> None:
         if self._running:
             self._trigger_processing(True)
+
+    def _update_capture_mask(self) -> None:
+        if self.capture_region is None:
+            self._set_capture_masks([])
+            return
+        popup_regions = self._overlay.dictionary_mask_regions()
+        if not popup_regions:
+            self._set_capture_masks([])
+            return
+        masks: List[Region] = []
+        for region in popup_regions:
+            intersection = ScreenCapture.intersect_regions(self.capture_region, region)
+            if intersection is not None:
+                masks.append(intersection)
+        self._set_capture_masks(masks)
+
+    def _set_capture_masks(self, masks: List[Region]) -> None:
+        capture = getattr(self.pipeline, "capture", None)
+        setter = getattr(capture, "set_mask_regions", None)
+        if callable(setter):
+            setter(masks)
 
     def _exit_application(self) -> None:
         self._exiting = True
