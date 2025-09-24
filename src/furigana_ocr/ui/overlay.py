@@ -104,6 +104,9 @@ class OverlayWindow(QWidget):
     def hide_dictionary(self, label: "TokenLabel") -> None:
         self._dictionary_popup.hide_popup()
 
+    def dictionary_mask_regions(self) -> List[tuple[int, int, int, int]]:
+        return self._dictionary_popup.mask_regions()
+
 
 class TokenLabel(QWidget):
     """Interactive widget responsible for rendering a single token."""
@@ -134,7 +137,13 @@ class TokenLabel(QWidget):
         new_top = max(desired_top, 0)
         self._surface_offset = bbox.top - new_top
         height = max(self._surface_offset + bbox.height, 1)
-        self.setGeometry(bbox.left, new_top, bbox.width, height)
+        width = bbox.width
+        furigana_text = self.annotation.furigana
+        if furigana_text and self._furigana_font is not None:
+            metrics = QFontMetrics(self._furigana_font)
+            text_width = metrics.horizontalAdvance(furigana_text)
+            width = max(width, text_width)
+        self.setGeometry(bbox.left, new_top, max(width, 1), height)
         self._bbox = bbox
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
@@ -334,3 +343,21 @@ class DictionaryPopup(QWidget):
         if not body_sections:
             return None
         return "".join(body_sections)
+
+    def mask_regions(self) -> List[tuple[int, int, int, int]]:
+        """Return device-pixel rectangles occupied by the popup for masking."""
+
+        if not self.isVisible():
+            return []
+        geometry = self.frameGeometry()
+        screen = self.screen()
+        ratio = float(screen.devicePixelRatio()) if screen is not None else 1.0
+        if ratio <= 0:
+            ratio = 1.0
+        left = int(round(geometry.left() * ratio))
+        top = int(round(geometry.top() * ratio))
+        width = int(round(geometry.width() * ratio))
+        height = int(round(geometry.height() * ratio))
+        if width <= 0 or height <= 0:
+            return []
+        return [(left, top, width, height)]

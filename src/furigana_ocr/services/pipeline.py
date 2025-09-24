@@ -90,6 +90,13 @@ class ProcessingPipeline:
             if furigana and self._is_kana_text(token.surface):
                 furigana = None
             dictionary_entries = self.dictionary.lookup(token.surface)
+            if (
+                not dictionary_entries
+                and token.lemma
+                and token.lemma.strip()
+                and token.lemma.strip() != token.surface.strip()
+            ):
+                dictionary_entries = self.dictionary.lookup(token.lemma.strip())
             annotations.append(
                 TokenAnnotation(
                     token=token,

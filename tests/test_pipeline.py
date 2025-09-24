@@ -73,7 +73,13 @@ if "pykakasi" not in sys.modules:  # pragma: no cover - test isolation shim
     sys.modules["pykakasi"] = pykakasi_module
 
 from furigana_ocr.config import AppConfig
-from furigana_ocr.core.models import BoundingBox, OCRResult, OCRWord, TokenData
+from furigana_ocr.core.models import (
+    BoundingBox,
+    DictionaryEntry,
+    OCRResult,
+    OCRWord,
+    TokenData,
+)
 from furigana_ocr.services.pipeline import PipelineDependencies, ProcessingPipeline
 
 
@@ -100,6 +106,16 @@ class _DummyFurigana:
 class _DummyDictionary:
     def lookup(self, surface: str):  # pragma: no cover - not used in test
         return []
+
+
+class _RecordingDictionary:
+    def __init__(self, mapping):
+        self.mapping = mapping
+        self.calls: List[str] = []
+
+    def lookup(self, surface: str):
+        self.calls.append(surface)
+        return self.mapping.get(surface, [])
 
 
 def _build_pipeline() -> ProcessingPipeline:
@@ -180,3 +196,16 @@ def test_furigana_skips_annotation_for_existing_kana_surface() -> None:
     annotations = pipeline._enrich([token], OCRResult(text="テスト", words=[word]))
 
     assert annotations[0].furigana is None
+
+
+def test_dictionary_lookup_falls_back_to_lemma() -> None:
+    pipeline = _build_pipeline()
+    entry = DictionaryEntry(expression="走る", reading=None, senses=("to run",))
+    dictionary = _RecordingDictionary({"走る": [entry]})
+    pipeline.dictionary = dictionary
+    token = TokenData(surface="走った", lemma="走る")
+
+    annotations = pipeline._enrich([token], OCRResult(text="走った", words=[]))
+
+    assert dictionary.calls == ["走った", "走る"]
+    assert annotations[0].dictionary_entries == [entry]
